@@ -4,19 +4,20 @@ import os
 from typing import List, Optional, Tuple
 
 # ================================================================
-# CONFIGURAÇÕES (altere aqui conforme desejar)
+# CONFIGURAÇÕES
 # ================================================================
 
-NUM_PARTIDAS = 30                # Quantas partidas serão simuladas
+NUM_PARTIDAS = 10000000                # Quantas partidas serão simuladas
 ARQUIVO_RESULTADOS = "resultados.txt"
+MODO_ESCRITA = "anexar"          # "sobrescrever" ou "anexar"
 
 # Escolha os agentes:
 # opções: "especialista", "ingenuo", "random" (ingenuo é random)
-AGENTE_X = "especialista"        # Jogador que usa X (começa)
-AGENTE_O = "especialista"             # Jogador que usa O
+AGENTE_X = "ingenuo"        # Jogador que usa X (começa)
+AGENTE_O = "ingenuo"        # Jogador que usa O
 
 # Configurações de visualização
-VISUALIZAR = False                # True para exibir cada partida, False para apenas simular
+VISUALIZAR = False               # True para exibir cada partida, False para apenas simular
 TEMPO_ENTRE_JOGADAS = 0.5        # segundos (se VISUALIZAR for True)
 LIMPAR_TELA = True               # limpa a tela a cada jogada (se VISUALIZAR for True)
 
@@ -79,6 +80,10 @@ class Tabuleiro:
             linhas.append(linha)
         return sep.join(linhas)
 
+    def get_estado_posicoes(self) -> List[int]:
+        """Retorna uma cópia do vetor de posições."""
+        return self.v.copy()
+
 # ================================================================
 # Classes de Jogadores (Agentes)
 # ================================================================
@@ -132,11 +137,13 @@ class Partida:
         self.jogador_o = jogador_o
         self.tabuleiro = Tabuleiro()
         self.resultado = None
+        self.estado_final = None  # Guarda o estado final do tabuleiro
 
     def jogar(self, visivel: bool = False, tempo_espera: float = 0.5,
               limpar_tela: bool = True) -> int:
         self.tabuleiro.reset()
         self.resultado = None
+        self.estado_final = None
         vez = X
 
         while True:
@@ -165,6 +172,7 @@ class Partida:
             fim = self.tabuleiro.verificar_vitoria()
             if fim is not None:
                 self.resultado = fim
+                self.estado_final = self.tabuleiro.get_estado_posicoes()
                 if visivel:
                     if limpar_tela:
                         os.system('cls' if os.name == 'nt' else 'clear')
@@ -183,34 +191,66 @@ class Partida:
 
         return self.resultado
 
-    def registrar_resultado(self, numero: int) -> Tuple[int, int, int, int]:
+    def registrar_resultado(self, numero: int) -> Tuple[int, int, int, int, int, List[int]]:
+        """Retorna tupla com dados da partida e estado final."""
         vx = 1 if self.resultado == X else 0
         vo = 1 if self.resultado == O else 0
         emp = 1 if self.resultado == 0 else 0
-        return (numero, vx, vo, emp)
+        
+        # Se por algum motivo o estado final for None, usa o estado atual
+        estado = self.estado_final if self.estado_final is not None else self.tabuleiro.get_estado_posicoes()
+        
+        return (numero, vx, vo, emp, self.tabuleiro.jogadas, estado)
 
 # ================================================================
 # Função de simulação
 # ================================================================
 
 def simular(jogador_x, jogador_o, num_partidas, arquivo_saida,
-            visualizar=False, tempo=0.5, limpar_tela=True):
+            visualizar=False, tempo=0.5, limpar_tela=True,
+            modo_escrita="sobrescrever"):
+    """
+    Executa a simulação.
+    modo_escrita: "sobrescrever" ou "anexar"
+    """
     print(f"Iniciando simulação de {num_partidas} partidas...")
     if visualizar:
         print("Modo visual ativado. Pressione Ctrl+C para interromper a qualquer momento.\n")
     else:
         print("Modo silencioso (sem exibição).\n")
 
-    with open(arquivo_saida, "w", encoding="utf-8") as f:
-        f.write("Partida\tVitoria_J1\tVitoria_J2\tEmpate\n")
+    # Define o modo de abertura do arquivo
+    modo_abertura = 'w' if modo_escrita.lower() == "sobrescrever" else 'a'
+    
+    # Verifica se o arquivo existe e se devemos escrever o cabeçalho
+    arquivo_existe = os.path.isfile(arquivo_saida)
+    escrever_cabecalho = not arquivo_existe or modo_escrita.lower() == "sobrescrever"
+
+    with open(arquivo_saida, modo_abertura, encoding="utf-8") as f:
+        # Escreve o cabeçalho se necessário
+        if escrever_cabecalho:
+            cabecalho = "Partida\tVitoria_J1\tVitoria_J2\tEmpate\tNum_Jogadas\tV0\tV1\tV2\tV3\tV4\tV5\tV6\tV7\tV8\n"
+            f.write(cabecalho)
+            print(f"Cabeçalho escrito no arquivo: {arquivo_saida}")
+        else:
+            print(f"Anexando dados ao arquivo existente: {arquivo_saida}")
+
         for i in range(1, num_partidas + 1):
             partida = Partida(jogador_x, jogador_o)
             partida.jogar(visivel=visualizar, tempo_espera=tempo,
                           limpar_tela=limpar_tela)
             dados = partida.registrar_resultado(i)
-            f.write(f"{dados[0]}\t{dados[1]}\t{dados[2]}\t{dados[3]}\n")
+            
+            # Número da partida, vitórias, empate, número de jogadas e posições
+            linha = f"{dados[0]}\t{dados[1]}\t{dados[2]}\t{dados[3]}\t{dados[4]}"
+            for pos in dados[5]:
+                linha += f"\t{pos}"
+            linha += "\n"
+            f.write(linha)
+            
             if not visualizar and i % 1000 == 0:
                 print(f"  {i} partidas concluídas...")
+
     print(f"\nSimulação finalizada. Resultados salvos em '{arquivo_saida}'.")
 
 # ================================================================
@@ -233,7 +273,7 @@ def main():
     # Executa a simulação
     simular(jogador_x, jogador_o, NUM_PARTIDAS, ARQUIVO_RESULTADOS,
             visualizar=VISUALIZAR, tempo=TEMPO_ENTRE_JOGADAS,
-            limpar_tela=LIMPAR_TELA)
+            limpar_tela=LIMPAR_TELA, modo_escrita=MODO_ESCRITA)
 
 if __name__ == "__main__":
     main()
