@@ -7,14 +7,14 @@ from typing import List, Optional, Tuple
 # CONFIGURAÇÕES
 # ================================================================
 
-NUM_PARTIDAS = 10000000                # Quantas partidas serão simuladas
+NUM_PARTIDAS = 500000                # Quantas partidas serão simuladas
 ARQUIVO_RESULTADOS = "resultados.txt"
 MODO_ESCRITA = "anexar"          # "sobrescrever" ou "anexar"
 
 # Escolha os agentes:
 # opções: "especialista", "ingenuo", "random" (ingenuo é random)
 AGENTE_X = "ingenuo"        # Jogador que usa X (começa)
-AGENTE_O = "ingenuo"        # Jogador que usa O
+AGENTE_O = "especialista"        # Jogador que usa O
 
 # Configurações de visualização
 VISUALIZAR = False               # True para exibir cada partida, False para apenas simular
@@ -101,29 +101,62 @@ class JogadorIngenuo(Jogador):
         return random.choice(vazias) if vazias else -1
 
 class JogadorEspecialista(Jogador):
+
+    def _ameacas(self, tabuleiro, jogador):
+        """Posições vazias que dariam vitória imediata a `jogador`."""
+        vazias = tabuleiro.posicoes_vazias()
+        ameacas = []
+        for pos in vazias:
+            tabuleiro.v[pos] = jogador
+            if tabuleiro.verificar_vitoria() == jogador:
+                ameacas.append(pos)
+            tabuleiro.v[pos] = VAZIO
+        return ameacas
+
+    def _faz_fork(self, tabuleiro, jogador, pos):
+        """Se jogar em `pos` cria 2+ ameaças simultâneas (fork)."""
+        if tabuleiro.v[pos] != VAZIO:
+            return False
+        tabuleiro.v[pos] = jogador
+        n_ameacas = len(self._ameacas(tabuleiro, jogador))
+        tabuleiro.v[pos] = VAZIO
+        return n_ameacas >= 2
+
     def escolher_jogada(self, tabuleiro: Tabuleiro, simbolo: int) -> int:
         vazias = tabuleiro.posicoes_vazias()
         if not vazias:
             return -1
         oponente = -simbolo
-        # Tentar ganhar
+
+        # 1. VITÓRIA IMEDIATA
         for pos in vazias:
             tabuleiro.v[pos] = simbolo
             if tabuleiro.verificar_vitoria() == simbolo:
                 tabuleiro.v[pos] = VAZIO
                 return pos
             tabuleiro.v[pos] = VAZIO
-        # Bloquear
+
+        # 2. BLOQUEIO IMEDIATO
         for pos in vazias:
             tabuleiro.v[pos] = oponente
             if tabuleiro.verificar_vitoria() == oponente:
                 tabuleiro.v[pos] = VAZIO
                 return pos
             tabuleiro.v[pos] = VAZIO
-        # Prioridades: centro, cantos, laterais
-        prioridades = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-        for pos in prioridades:
-            if pos in vazias:
+
+        # 3. CRIAR FORK
+        for pos in vazias:
+            if self._faz_fork(tabuleiro, simbolo, pos):
+                return pos
+
+        # 4. BLOQUEAR FORK DO OPONENTE
+        for pos in vazias:
+            if self._faz_fork(tabuleiro, oponente, pos):
+                return pos
+
+        # 5. PRIORIDADES (centro, cantos, laterais)
+        for pos in [4, 0, 2, 6, 8, 1, 3, 5, 7]:
+            if tabuleiro.v[pos] == VAZIO:
                 return pos
         return vazias[0]
 

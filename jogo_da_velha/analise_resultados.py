@@ -14,8 +14,8 @@ from collections import Counter
 # ================================================================
 
 ARQUIVO_RESULTADOS = "resultados.txt"      # Nome do arquivo de resultados
-EXPORTAR_CSV = False                       # True para exportar análise para CSV
-NOME_CSV = "analise_detalhada.csv"         # Nome do arquivo CSV (se exportar)
+EXPORTAR_CSV = True                       # True para exportar análise para CSV
+NOME_CSV = "Ingenuo x Especialista.csv"         # Nome do arquivo CSV (se exportar)
 
 # ================================================================
 # Constantes do jogo (para análise)
