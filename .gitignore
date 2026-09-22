@@ -1,0 +1,6 @@
+*.jsonl
+*.png
+*.csv
+*.txt
+/Resultados/*
+/__pycache__/*
