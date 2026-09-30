@@ -176,7 +176,6 @@ class JogadorInteligente(Jogador):
     # Parâmetros
     # ------------------------------------------------------------------
     TAXA_APRENDIZADO = 0.3   # quão rápido a pontuação se ajusta
-    FATOR_DESCONTO = 1.0     # peso do futuro (1.0 = sem desconto)
     RECOMPENSA_VITORIA = 1.0
     RECOMPENSA_DERROTA = -1.0
     RECOMPENSA_EMPATE = 0.0
