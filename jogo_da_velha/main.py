@@ -3,7 +3,6 @@ import time
 import os
 import json
 from typing import List, Optional, Tuple, Dict
-import jogo_da_velha.analise_resultados as analise_resultados 
 import analise_resultados
 
 # ================================================================
@@ -11,18 +10,17 @@ import analise_resultados
 # ================================================================
 REMOVER_ARQUIVOS_ANTIGOS = True  # Se True, remove arquivos de resultados e conhecimento antes de iniciar
 
+# Escolha os agentes:
+# opções: "especialista", "ingenuo", "inteligente"
+AGENTE_X = "ingenuo"
+AGENTE_O = "ingenuo"
 
 NUM_PARTIDAS = 100000
-ARQUIVO_RESULTADOS = "resultados.txt"
+ARQUIVO_RESULTADOS = f"resultado_{AGENTE_X}_vs_{AGENTE_O}.txt"
 MODO_ESCRITA = "sobrescrever"  # opções: "sobrescrever", "anexar"
 
 # Arquivo de conhecimento do jogador inteligente (JSONL)
 BASE_CONHECIMENTO = "conhecimento.jsonl"
-
-# Escolha os agentes:
-# opções: "especialista", "ingenuo", "inteligente"
-AGENTE_X = "inteligente"
-AGENTE_O = "inteligente"
 
 VISUALIZAR = False
 TEMPO_ENTRE_JOGADAS = 0.5
@@ -463,5 +461,5 @@ if __name__ == "__main__":
         except PermissionError:
             print("Você não tem permissão para apagar este arquivo.")
     main()
-    analise_resultados.main()
+    analise_resultados.main(ARQUIVO_RESULTADOS)
     

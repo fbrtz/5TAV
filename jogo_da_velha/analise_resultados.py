@@ -414,13 +414,17 @@ def exportar_analise_para_csv(estatisticas: Dict, nome_arquivo: str = "analise_d
 # Função Principal
 # ================================================================
 
-def main():
+def main(arquivo_resultado: str = None):
     print("\n" + "=" * 70)
     print("                    📊 ANALISADOR DE RESULTADOS")
     print("=" * 70 + "\n")
 
-    print(f"📖 Lendo arquivo: {ARQUIVO_RESULTADOS}")
-    dados = ler_arquivo_resultados(ARQUIVO_RESULTADOS)
+    if arquivo_resultado:
+        print(f"📖 Lendo arquivo: {arquivo_resultado}")
+        dados = ler_arquivo_resultados(arquivo_resultado)
+    else:
+        print(f"📖 Lendo arquivo: {ARQUIVO_RESULTADOS}")
+        dados = ler_arquivo_resultados(ARQUIVO_RESULTADOS)
 
     if not dados:
         print("❌ Não foi possível ler os dados do arquivo.")
@@ -431,20 +435,32 @@ def main():
 
     estatisticas = analisar_resultados(dados)
     exibir_analise(estatisticas)
-
+    
+    if arquivo_resultado:
+        nome_base = os.path.splitext(os.path.basename(arquivo_resultado))[0]
+    
     if EXPORTAR_CSV:
-        exportar_analise_para_csv(estatisticas, NOME_CSV)
+        if nome_base:
+            nome_csv = f"{nome_base}.csv"
+        else:
+            nome_csv = NOME_CSV
+        exportar_analise_para_csv(estatisticas, nome_csv)
 
     # Passo de amostragem adaptativo (calculado pelo total)
     passo = calcular_passo(len(dados))
     print(f"\n📈 Gerando gráficos (passo de amostragem: {passo})...")
 
-    gerar_grafico_acumulado_absoluto(dados, passo, ARQUIVO_GRAFICO_ACUMULADO_ABS)
-    gerar_grafico_acumulado_percentual(dados, passo, ARQUIVO_GRAFICO_ACUMULADO_PCT)
-
-    if GERAR_GRAFICO_INTELIGENTE:
-        gerar_grafico_inteligente(dados, passo, NOME_INTELIGENTE,
-                                  ARQUIVO_GRAFICO_INTELIGENTE)
+    if nome_base:
+        gerar_grafico_acumulado_absoluto(dados, passo, f"{nome_base}_acumulado_absoluto.png")
+        gerar_grafico_acumulado_percentual(dados, passo, f"{nome_base}_acumulado_percentual.png")
+        if GERAR_GRAFICO_INTELIGENTE:
+            gerar_grafico_inteligente(dados, passo, NOME_INTELIGENTE,f"{nome_base}_inteligente.png")
+    else:
+        gerar_grafico_acumulado_absoluto(dados, passo, ARQUIVO_GRAFICO_ACUMULADO_ABS)
+        gerar_grafico_acumulado_percentual(dados, passo, ARQUIVO_GRAFICO_ACUMULADO_PCT)
+        if GERAR_GRAFICO_INTELIGENTE:
+            gerar_grafico_inteligente(dados, passo, NOME_INTELIGENTE,
+                                    ARQUIVO_GRAFICO_INTELIGENTE)
 
     print("\n✅ Análise concluída.")
 
