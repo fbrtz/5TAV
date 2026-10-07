@@ -1,0 +1,11 @@
+Resumo: inteligente (X) vs ingenuo (O)
+==================================================
+
+Total de partidas: 500000
+Vitórias de inteligente (X): 461601 (92.32%)
+Vitórias de ingenuo (O): 5509 (1.10%)
+Empates: 32890 (6.58%)
+
+Média de jogadas por partida: 6.12
+Mínimo: 5
+Máximo: 9

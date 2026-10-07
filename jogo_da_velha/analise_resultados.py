@@ -1,36 +1,26 @@
 """
 analise_resultados.py
-Script para analisar os resultados do jogo da velha.
-Exibe estatísticas, porcentagens e gera gráficos acumulados desde o início.
-Todas as configurações são feitas diretamente no código.
+Analisa resultados do jogo da velha, gera gráficos e recortes.
+Extrai os nomes dos agentes do nome do arquivo e organiza a saída
+em uma pasta própria dentro de 'resultados/'.
 """
 
 import os
-from typing import List, Dict
+import csv
+from typing import List, Dict, Tuple, Optional
 from collections import Counter
 
 import matplotlib
-matplotlib.use("Agg")  # backend sem interface gráfica
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # ================================================================
 # CONFIGURAÇÕES
 # ================================================================
 
-ARQUIVO_RESULTADOS = "resultados.txt"
+PASTA_SAIDA_BASE = "resultados"
 EXPORTAR_CSV = True
-NOME_CSV = "Resultados.csv"
-
-# Nomes dos arquivos de gráfico
-ARQUIVO_GRAFICO_ACUMULADO_ABS = "grafico_acumulado_absoluto.png"
-ARQUIVO_GRAFICO_ACUMULADO_PCT = "grafico_acumulado_percentual.png"
-ARQUIVO_GRAFICO_INTELIGENTE   = "grafico_inteligente.png"
-
-# Se True, gera também o gráfico do jogador inteligente (assumindo que é J2/O)
 GERAR_GRAFICO_INTELIGENTE = True
-
-# Nome do jogador inteligente (informativo, apenas no título do gráfico)
-NOME_INTELIGENTE = "inteligente"
 
 # ================================================================
 # Constantes do jogo
@@ -40,8 +30,46 @@ X = 1
 O = -1
 VAZIO = 0
 
+
 # ================================================================
-# Funções de Análise
+# Utilidades de arquivo/pasta
+# ================================================================
+
+def extrair_agentes_do_nome(caminho_arquivo: str) -> Tuple[str, str]:
+    """
+    A partir de 'resultado_ingenuo_vs_inteligente.txt', retorna
+    ('ingenuo', 'inteligente').
+
+    Se o padrão não for reconhecido, retorna ('j1', 'j2').
+    """
+    nome = os.path.basename(caminho_arquivo)
+    nome_sem_ext = os.path.splitext(nome)[0]
+
+    if nome_sem_ext.startswith("resultado_"):
+        corpo = nome_sem_ext[len("resultado_"):]
+    else:
+        corpo = nome_sem_ext
+
+    if "_vs_" in corpo:
+        agente_x, agente_o = corpo.split("_vs_", 1)
+        return agente_x, agente_o
+
+    return "j1", "j2"
+
+
+def preparar_pasta_saida(caminho_arquivo: str) -> str:
+    """
+    Cria uma pasta dentro de PASTA_SAIDA_BASE com o nome base do arquivo.
+    Retorna o caminho da pasta.
+    """
+    nome_base = os.path.splitext(os.path.basename(caminho_arquivo))[0]
+    pasta = os.path.join(PASTA_SAIDA_BASE, nome_base)
+    os.makedirs(pasta, exist_ok=True)
+    return pasta
+
+
+# ================================================================
+# Leitura de resultados
 # ================================================================
 
 def ler_arquivo_resultados(nome_arquivo: str) -> List[Dict]:
@@ -88,6 +116,10 @@ def ler_arquivo_resultados(nome_arquivo: str) -> List[Dict]:
     return dados
 
 
+# ================================================================
+# Análise geral
+# ================================================================
+
 def analisar_resultados(dados: List[Dict]) -> Dict:
     if not dados:
         return {}
@@ -106,11 +138,7 @@ def analisar_resultados(dados: List[Dict]) -> Dict:
     }
 
     posicoes_finais = [0] * 9
-    posicoes_por_jogador = {
-        'X': [0] * 9,
-        'O': [0] * 9,
-        'VAZIO': [0] * 9
-    }
+    posicoes_por_jogador = {'X': [0] * 9, 'O': [0] * 9, 'VAZIO': [0] * 9}
 
     for d in dados:
         for i, val in enumerate(d['posicoes']):
@@ -159,7 +187,560 @@ def analisar_resultados(dados: List[Dict]) -> Dict:
     }
 
 
-def exibir_analise(estatisticas: Dict):
+# ================================================================
+# Recortes
+# ================================================================
+
+def _calcular_taxas_bloco(dados: List[Dict]) -> Dict:
+    n = len(dados)
+    if n == 0:
+        return {
+            'n': 0, 'vx': 0, 'vo': 0, 'emp': 0,
+            'pct_vx': 0.0, 'pct_vo': 0.0, 'pct_emp': 0.0,
+            'pct_nao_derrota_x': 0.0, 'pct_nao_derrota_o': 0.0,
+        }
+    vx = sum(1 for d in dados if d['vitoria_x'] == 1)
+    vo = sum(1 for d in dados if d['vitoria_o'] == 1)
+    emp = sum(1 for d in dados if d['empate'] == 1)
+    pct_vx = vx / n * 100
+    pct_vo = vo / n * 100
+    pct_emp = emp / n * 100
+    return {
+        'n': n, 'vx': vx, 'vo': vo, 'emp': emp,
+        'pct_vx': pct_vx,
+        'pct_vo': pct_vo,
+        'pct_emp': pct_emp,
+        'pct_nao_derrota_x': pct_vx + pct_emp,
+        'pct_nao_derrota_o': pct_vo + pct_emp,
+    }
+
+
+def _gerar_cortes_para_total(total: int) -> List[int]:
+    if total <= 1_000:
+        base = [100, 250, 500, 1000]
+    elif total <= 10_000:
+        base = [100, 500, 1_000, 2_500, 5_000, 10_000]
+    elif total <= 100_000:
+        base = [100, 500, 1_000, 5_000, 10_000, 25_000, 50_000, 100_000]
+    elif total <= 1_000_000:
+        base = [100, 500, 1_000, 5_000, 10_000, 25_000, 50_000,
+                100_000, 250_000, 500_000, 1_000_000]
+    else:
+        base = [100, 1_000, 10_000, 100_000, 250_000, 500_000,
+                1_000_000, 2_500_000, 5_000_000, 10_000_000,
+                total // 2, total]
+    cortes = sorted(set(c for c in base if 0 < c <= total))
+    if total not in cortes:
+        cortes.append(total)
+    return cortes
+
+
+def _calcular_recortes(dados: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Retorna (recortes_acumulados, recortes_janelas), cada um uma lista de dicts
+    com os dados de cada corte.
+    """
+    total = len(dados)
+    cortes = _gerar_cortes_para_total(total)
+
+    acumulados = []
+    for corte in cortes:
+        bloco = dados[:corte]
+        taxas = _calcular_taxas_bloco(bloco)
+        taxas['rotulo'] = str(corte)
+        taxas['corte'] = corte
+        taxas['inicio'] = 0
+        acumulados.append(taxas)
+
+    janelas = []
+    anterior = 0
+    for corte in cortes:
+        bloco = dados[anterior:corte]
+        taxas = _calcular_taxas_bloco(bloco)
+        taxas['rotulo'] = f"{anterior}-{corte}"
+        taxas['corte'] = corte
+        taxas['inicio'] = anterior
+        janelas.append(taxas)
+        anterior = corte
+
+    return acumulados, janelas
+
+
+# ================================================================
+# Utilidades de formatação
+# ================================================================
+
+def _abreviar_numero(n: int) -> str:
+    """Abrevia números grandes para rótulos curtos. Ex: 1000 → '1k'."""
+    if n >= 1_000_000:
+        return f"{n // 1_000_000}M"
+    if n >= 1_000:
+        return f"{n // 1_000}k"
+    return str(n)
+
+
+def _formatar_rotulo_janela(janela: Dict) -> str:
+    """Retorna um rótulo curto tipo '0-5k' ou '5k-10k' para o eixo X."""
+    return f"{_abreviar_numero(janela['inicio'])}-{_abreviar_numero(janela['corte'])}"
+
+
+def _anotar_pontos(ax, posicoes, valores, cor):
+    """Anota o valor numérico acima de cada ponto."""
+    for i, v in enumerate(valores):
+        ax.annotate(
+            f"{v:.1f}",
+            xy=(posicoes[i], v),
+            xytext=(0, 8),
+            textcoords="offset points",
+            ha="center",
+            fontsize=8,
+            color=cor,
+        )
+
+
+# ================================================================
+# Gráficos gerais (série temporal contínua)
+# ================================================================
+
+def _plot_taxas_acumuladas(dados, passo, arquivo_saida):
+    n = len(dados)
+    eixo_x, pct_j1, pct_j2, pct_emp = [], [], [], []
+    total_j1 = total_j2 = total_emp = 0
+    for i, d in enumerate(dados, start=1):
+        total_j1 += d['vitoria_x']
+        total_j2 += d['vitoria_o']
+        total_emp += d['empate']
+        if i % passo == 0 or i == n:
+            eixo_x.append(i)
+            pct_j1.append(total_j1 / i * 100)
+            pct_j2.append(total_j2 / i * 100)
+            pct_emp.append(total_emp / i * 100)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(eixo_x, pct_j1, label="Vitórias J1 (X) %", color="#1f77b4", linewidth=1.8)
+    ax.plot(eixo_x, pct_j2, label="Vitórias J2 (O) %", color="#d62728", linewidth=1.8)
+    ax.plot(eixo_x, pct_emp, label="Empates %", color="#2ca02c", linewidth=1.8)
+    ax.set_xlabel("Número da partida")
+    ax.set_ylabel("Taxa acumulada (%)")
+    ax.set_title("Taxas acumuladas desde o início")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(-2, 102)
+    plt.tight_layout()
+    plt.savefig(arquivo_saida, dpi=120)
+    plt.close(fig)
+    print(f"📊 {arquivo_saida}")
+
+
+def _plot_acumulado_absoluto(dados, passo, arquivo_saida):
+    n = len(dados)
+    eixo_x, acum_j1, acum_j2, acum_emp = [], [], [], []
+    total_j1 = total_j2 = total_emp = 0
+    for i, d in enumerate(dados, start=1):
+        total_j1 += d['vitoria_x']
+        total_j2 += d['vitoria_o']
+        total_emp += d['empate']
+        if i % passo == 0 or i == n:
+            eixo_x.append(i)
+            acum_j1.append(total_j1)
+            acum_j2.append(total_j2)
+            acum_emp.append(total_emp)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(eixo_x, acum_j1, label="Vitórias J1 (X) acumuladas", color="#1f77b4", linewidth=1.8)
+    ax.plot(eixo_x, acum_j2, label="Vitórias J2 (O) acumuladas", color="#d62728", linewidth=1.8)
+    ax.plot(eixo_x, acum_emp, label="Empates acumulados", color="#2ca02c", linewidth=1.8)
+    ax.set_xlabel("Número da partida")
+    ax.set_ylabel("Contagem acumulada (absoluta)")
+    ax.set_title("Acumulado absoluto desde o início")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(arquivo_saida, dpi=120)
+    plt.close(fig)
+    print(f"📊 {arquivo_saida}")
+
+
+def _plot_grafico_inteligente(dados, passo, nome_inteligente, eh_segundo,
+                              arquivo_saida):
+    """
+    Plota a taxa de 'não-derrota' do inteligente, mais a taxa de vitória
+    dele e a taxa de empate, tudo acumulado desde o início.
+    """
+    n = len(dados)
+    eixo_x = []
+    taxa_nao_derrota = []
+    taxa_vitoria = []
+    taxa_empate = []
+
+    total_v_int = 0
+    total_emp = 0
+
+    for i, d in enumerate(dados, start=1):
+        if eh_segundo:
+            total_v_int += d['vitoria_o']
+        else:
+            total_v_int += d['vitoria_x']
+        total_emp += d['empate']
+
+        if i % passo == 0 or i == n:
+            eixo_x.append(i)
+            taxa_vitoria.append(total_v_int / i * 100)
+            taxa_empate.append(total_emp / i * 100)
+            taxa_nao_derrota.append((total_v_int + total_emp) / i * 100)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(eixo_x, taxa_nao_derrota, label="Não-derrota do inteligente",
+            color="#2ca02c", linewidth=2.0)
+    ax.plot(eixo_x, taxa_vitoria, label="Vitória do inteligente",
+            color="#1f77b4", linewidth=1.3, linestyle="--")
+    ax.plot(eixo_x, taxa_empate, label="Empate",
+            color="#ff7f0e", linewidth=1.3, linestyle=":")
+    ax.set_xlabel("Número da partida")
+    ax.set_ylabel("Taxa acumulada (%)")
+    ax.set_title(f"Desempenho do '{nome_inteligente}'")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(-2, 102)
+    plt.tight_layout()
+    plt.savefig(arquivo_saida, dpi=120)
+    plt.close(fig)
+    print(f"📊 {arquivo_saida}")
+
+
+# ================================================================
+# Gráficos de recorte por JANELA (rótulos + anotações)
+# ================================================================
+
+def _plot_recortes_janela_taxas(janelas: List[Dict], nome_x: str, nome_o: str,
+                                arquivo_saida: str):
+    """
+    Taxas por janela — VitX%, VitO%, Emp%.
+    Eixo X rotulado com o nome da janela (0-5k, 5k-10k, ...).
+    """
+    if not janelas:
+        return
+
+    rotulos = [_formatar_rotulo_janela(j) for j in janelas]
+    posicoes = list(range(len(janelas)))
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    v_vx = [j['pct_vx'] for j in janelas]
+    v_vo = [j['pct_vo'] for j in janelas]
+    v_emp = [j['pct_emp'] for j in janelas]
+
+    ax.plot(posicoes, v_vx, label=f"Vitórias {nome_x} (X)",
+            color="#1f77b4", linewidth=1.8, marker="o", markersize=5)
+    ax.plot(posicoes, v_vo, label=f"Vitórias {nome_o} (O)",
+            color="#d62728", linewidth=1.8, marker="o", markersize=5)
+    ax.plot(posicoes, v_emp, label="Empates",
+            color="#2ca02c", linewidth=1.8, marker="o", markersize=5)
+
+    _anotar_pontos(ax, posicoes, v_vx, "#1f77b4")
+    _anotar_pontos(ax, posicoes, v_vo, "#d62728")
+    _anotar_pontos(ax, posicoes, v_emp, "#2ca02c")
+
+    ax.set_xticks(posicoes)
+    ax.set_xticklabels(rotulos, rotation=45, ha="right")
+    ax.set_xlabel("Janela (partidas)")
+    ax.set_ylabel("Taxa na janela (%)")
+    ax.set_title(f"Taxas por janela — {nome_x} (X) vs {nome_o} (O)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    ax.set_ylim(-2, 105)
+
+    plt.tight_layout()
+    plt.savefig(arquivo_saida, dpi=120)
+    plt.close(fig)
+    print(f"📊 {arquivo_saida}")
+
+
+def _plot_recortes_janela_nao_derrota(janelas: List[Dict], nome_x: str, nome_o: str,
+                                      arquivo_saida: str):
+    """
+    Não-derrota por janela — NãoDerrota X%, NãoDerrota O%.
+    """
+    if not janelas:
+        return
+
+    rotulos = [_formatar_rotulo_janela(j) for j in janelas]
+    posicoes = list(range(len(janelas)))
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    v_ndx = [j['pct_nao_derrota_x'] for j in janelas]
+    v_ndo = [j['pct_nao_derrota_o'] for j in janelas]
+
+    ax.plot(posicoes, v_ndx, label=f"Não-derrota {nome_x} (X)",
+            color="#1f77b4", linewidth=1.8, marker="o", markersize=5)
+    ax.plot(posicoes, v_ndo, label=f"Não-derrota {nome_o} (O)",
+            color="#d62728", linewidth=1.8, marker="o", markersize=5)
+
+    _anotar_pontos(ax, posicoes, v_ndx, "#1f77b4")
+    _anotar_pontos(ax, posicoes, v_ndo, "#d62728")
+
+    ax.set_xticks(posicoes)
+    ax.set_xticklabels(rotulos, rotation=45, ha="right")
+    ax.set_xlabel("Janela (partidas)")
+    ax.set_ylabel("Não-derrota na janela (%)")
+    ax.set_title(f"Não-derrota por janela — {nome_x} (X) vs {nome_o} (O)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    ax.set_ylim(-2, 105)
+
+    plt.tight_layout()
+    plt.savefig(arquivo_saida, dpi=120)
+    plt.close(fig)
+    print(f"📊 {arquivo_saida}")
+
+
+# ================================================================
+# Gráficos de recorte por ACUMULADO (até o corte)
+# ================================================================
+
+def _plot_recortes_acumulado_taxas(acumulados: List[Dict], nome_x: str,
+                                   nome_o: str, arquivo_saida: str):
+    """
+    Taxas acumuladas até cada corte.
+    Eixo X = número absoluto da partida (corte).
+    """
+    if not acumulados:
+        return
+
+    eixo_x = [r['corte'] for r in acumulados]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(eixo_x, [r['pct_vx'] for r in acumulados],
+            label=f"Vitórias {nome_x} (X)", color="#1f77b4",
+            linewidth=1.8, marker="o", markersize=4)
+    ax.plot(eixo_x, [r['pct_vo'] for r in acumulados],
+            label=f"Vitórias {nome_o} (O)", color="#d62728",
+            linewidth=1.8, marker="o", markersize=4)
+    ax.plot(eixo_x, [r['pct_emp'] for r in acumulados],
+            label="Empates", color="#2ca02c",
+            linewidth=1.8, marker="o", markersize=4)
+    ax.set_xlabel("Partidas acumuladas (corte)")
+    ax.set_ylabel("Taxa acumulada (%)")
+    ax.set_title(f"Taxas acumuladas por corte — {nome_x} (X) vs {nome_o} (O)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    ax.set_ylim(-2, 105)
+    plt.tight_layout()
+    plt.savefig(arquivo_saida, dpi=120)
+    plt.close(fig)
+    print(f"📊 {arquivo_saida}")
+
+
+def _plot_recortes_acumulado_nao_derrota(acumulados: List[Dict], nome_x: str,
+                                         nome_o: str, arquivo_saida: str):
+    """
+    Não-derrota acumulada até cada corte.
+    """
+    if not acumulados:
+        return
+
+    eixo_x = [r['corte'] for r in acumulados]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(eixo_x, [r['pct_nao_derrota_x'] for r in acumulados],
+            label=f"Não-derrota {nome_x} (X)", color="#1f77b4",
+            linewidth=1.8, marker="o", markersize=4)
+    ax.plot(eixo_x, [r['pct_nao_derrota_o'] for r in acumulados],
+            label=f"Não-derrota {nome_o} (O)", color="#d62728",
+            linewidth=1.8, marker="o", markersize=4)
+    ax.set_xlabel("Partidas acumuladas (corte)")
+    ax.set_ylabel("Não-derrota acumulada (%)")
+    ax.set_title(f"Não-derrota acumulada por corte — {nome_x} (X) vs {nome_o} (O)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    ax.set_ylim(-2, 105)
+    plt.tight_layout()
+    plt.savefig(arquivo_saida, dpi=120)
+    plt.close(fig)
+    print(f"📊 {arquivo_saida}")
+
+
+# ================================================================
+# Agregador de gráficos de recorte
+# ================================================================
+
+def gerar_graficos_recortes(recortes_acumulados: List[Dict],
+                            recortes_janelas: List[Dict],
+                            nome_x: str, nome_o: str,
+                            pasta: str):
+    """
+    Gera quatro gráficos de recorte independentes:
+      1. recortes_taxas_janela.png            — taxas por janela (com rótulos)
+      2. recortes_nao_derrota_janela.png      — não-derrota por janela
+      3. recortes_taxas_acumulado.png         — taxas acumuladas por corte
+      4. recortes_nao_derrota_acumulado.png   — não-derrota acumulada por corte
+    """
+    _plot_recortes_janela_taxas(
+        recortes_janelas, nome_x, nome_o,
+        os.path.join(pasta, "recortes_taxas_janela.png")
+    )
+    _plot_recortes_janela_nao_derrota(
+        recortes_janelas, nome_x, nome_o,
+        os.path.join(pasta, "recortes_nao_derrota_janela.png")
+    )
+    _plot_recortes_acumulado_taxas(
+        recortes_acumulados, nome_x, nome_o,
+        os.path.join(pasta, "recortes_taxas_acumulado.png")
+    )
+    _plot_recortes_acumulado_nao_derrota(
+        recortes_acumulados, nome_x, nome_o,
+        os.path.join(pasta, "recortes_nao_derrota_acumulado.png")
+    )
+
+
+# ================================================================
+# CSV / TXT
+# ================================================================
+
+def exportar_recortes_csv(recortes: List[Dict], nome_arquivo: str, tipo: str):
+    """
+    Exporta uma lista de recortes (acumulados ou janelas) para CSV.
+    """
+    if not recortes:
+        return
+    with open(nome_arquivo, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, delimiter=";")
+        if tipo == "acumulado":
+            writer.writerow(["Corte", "N", "VitX%", "VitO%", "Emp%",
+                             "NaoDerrotaX%", "NaoDerrotaO%",
+                             "VitX", "VitO", "Empates"])
+        else:
+            writer.writerow(["Janela", "N", "VitX%", "VitO%", "Emp%",
+                             "NaoDerrotaX%", "NaoDerrotaO%",
+                             "VitX", "VitO", "Empates"])
+        for r in recortes:
+            writer.writerow([
+                r['rotulo'], r['n'],
+                f"{r['pct_vx']:.2f}", f"{r['pct_vo']:.2f}", f"{r['pct_emp']:.2f}",
+                f"{r['pct_nao_derrota_x']:.2f}", f"{r['pct_nao_derrota_o']:.2f}",
+                r['vx'], r['vo'], r['emp']
+            ])
+    print(f"📁 {nome_arquivo}")
+
+
+def exportar_recortes_txt(recortes_acumulados: List[Dict],
+                          recortes_janelas: List[Dict],
+                          nome_x: str, nome_o: str,
+                          arquivo_saida: str):
+    """
+    Gera um TXT formatado com as duas tabelas de recorte
+    (acumulado e janela) para leitura humana direta.
+    """
+    if not recortes_acumulados or not recortes_janelas:
+        return
+
+    # Larguras fixas para alinhar as colunas
+    LARG_REC = 22
+    LARG_N = 8
+    LARG_PCT = 8
+    LARG_ND = 11
+
+    def _linha_separadora():
+        return (
+            "-" * LARG_REC + "-+-" +
+            "-" * LARG_N + "-+-" +
+            "-" * LARG_PCT + "-+-" +
+            "-" * LARG_PCT + "-+-" +
+            "-" * LARG_PCT + "-+-" +
+            "-" * LARG_ND + "-+-" +
+            "-" * LARG_ND
+        )
+
+    def _cabecalho_tabela(rotulo_col1: str):
+        return (
+            f"{rotulo_col1:>{LARG_REC}} | "
+            f"{'N':>{LARG_N}} | "
+            f"{'VitX%':>{LARG_PCT}} | "
+            f"{'VitO%':>{LARG_PCT}} | "
+            f"{'Emp%':>{LARG_PCT}} | "
+            f"{'NDerX%':>{LARG_ND}} | "
+            f"{'NDerO%':>{LARG_ND}}"
+        )
+
+    def _linha_tabela(r: Dict):
+        return (
+            f"{r['rotulo']:>{LARG_REC}} | "
+            f"{r['n']:>{LARG_N}} | "
+            f"{r['pct_vx']:>{LARG_PCT}.2f} | "
+            f"{r['pct_vo']:>{LARG_PCT}.2f} | "
+            f"{r['pct_emp']:>{LARG_PCT}.2f} | "
+            f"{r['pct_nao_derrota_x']:>{LARG_ND}.2f} | "
+            f"{r['pct_nao_derrota_o']:>{LARG_ND}.2f}"
+        )
+
+    linhas = []
+    linhas.append("=" * (LARG_REC + LARG_N + LARG_PCT * 3 + LARG_ND * 2 + 3 * 6))
+    linhas.append(f"  RECORTES — {nome_x} (X) vs {nome_o} (O)")
+    linhas.append("=" * (LARG_REC + LARG_N + LARG_PCT * 3 + LARG_ND * 2 + 3 * 6))
+    linhas.append("")
+    linhas.append("Legenda:")
+    linhas.append("  VitX%   = % de vitórias do jogador X")
+    linhas.append("  VitO%   = % de vitórias do jogador O")
+    linhas.append("  Emp%    = % de empates")
+    linhas.append("  NDerX%  = Não-derrota de X (VitX% + Emp%)")
+    linhas.append("  NDerO%  = Não-derrota de O (VitO% + Emp%)")
+    linhas.append("")
+    linhas.append("")
+
+    # ---- Tabela 1: acumulado ----
+    linhas.append("TABELA 1 — ACUMULADO (do início até o corte)")
+    linhas.append("")
+    linhas.append(_cabecalho_tabela("Corte"))
+    linhas.append(_linha_separadora())
+    for r in recortes_acumulados:
+        linhas.append(_linha_tabela(r))
+    linhas.append("")
+    linhas.append("")
+
+    # ---- Tabela 2: janelas ----
+    linhas.append("TABELA 2 — JANELAS (cada trecho isolado)")
+    linhas.append("")
+    linhas.append(_cabecalho_tabela("Janela"))
+    linhas.append(_linha_separadora())
+    for r in recortes_janelas:
+        linhas.append(_linha_tabela(r))
+    linhas.append("")
+
+    with open(arquivo_saida, "w", encoding="utf-8") as f:
+        f.write("\n".join(linhas))
+
+    print(f"📁 {arquivo_saida}")
+
+
+def exportar_resumo_txt(estatisticas: Dict, nome_x: str, nome_o: str,
+                        nome_arquivo: str):
+    """
+    Salva um resumo em texto puro, mais legível que o CSV.
+    """
+    if not estatisticas:
+        return
+    with open(nome_arquivo, "w", encoding="utf-8") as f:
+        f.write(f"Resumo: {nome_x} (X) vs {nome_o} (O)\n")
+        f.write("=" * 50 + "\n\n")
+        f.write(f"Total de partidas: {estatisticas['total']}\n")
+        f.write(f"Vitórias de {nome_x} (X): {estatisticas['vitorias_x']} "
+                f"({estatisticas['porcentagem_x']:.2f}%)\n")
+        f.write(f"Vitórias de {nome_o} (O): {estatisticas['vitorias_o']} "
+                f"({estatisticas['porcentagem_o']:.2f}%)\n")
+        f.write(f"Empates: {estatisticas['empates']} "
+                f"({estatisticas['porcentagem_empate']:.2f}%)\n")
+        f.write(f"\nMédia de jogadas por partida: {estatisticas['media_jogadas']:.2f}\n")
+        f.write(f"Mínimo: {estatisticas['min_jogadas']}\n")
+        f.write(f"Máximo: {estatisticas['max_jogadas']}\n")
+    print(f"📁 {nome_arquivo}")
+
+
+# ================================================================
+# Impressão no terminal
+# ================================================================
+
+def exibir_analise(estatisticas: Dict, nome_x: str, nome_o: str):
     if not estatisticas:
         print("❌ Nenhum dado para analisar.")
         return
@@ -167,88 +748,45 @@ def exibir_analise(estatisticas: Dict):
     total = estatisticas['total']
 
     print("\n" + "=" * 70)
-    print("                    📊 ANÁLISE DOS RESULTADOS")
+    print(f"   📊 ANÁLISE: {nome_x} (X) vs {nome_o} (O)")
     print("=" * 70)
     print(f"\n📈 Total de partidas: {total}")
     print("-" * 70)
+    print(f"  🏆 Vitórias de {nome_x} (X): "
+          f"{estatisticas['vitorias_x']:>7} ({estatisticas['porcentagem_x']:6.2f}%)")
+    print(f"  🏆 Vitórias de {nome_o} (O): "
+          f"{estatisticas['vitorias_o']:>7} ({estatisticas['porcentagem_o']:6.2f}%)")
+    print(f"  🤝 Empates:                   "
+          f"{estatisticas['empates']:>7} ({estatisticas['porcentagem_empate']:6.2f}%)")
+    print(f"\n  Não-derrota de {nome_x}: "
+          f"{estatisticas['porcentagem_x'] + estatisticas['porcentagem_empate']:.2f}%")
+    print(f"  Não-derrota de {nome_o}: "
+          f"{estatisticas['porcentagem_o'] + estatisticas['porcentagem_empate']:.2f}%")
+    print("=" * 70)
 
-    print(f"\n🎯 RESULTADOS:")
-    print(f"  🏆 Vitórias do J1 (X): {estatisticas['vitorias_x']:4d}  ({estatisticas['porcentagem_x']:6.2f}%)")
-    print(f"  🏆 Vitórias do J2 (O): {estatisticas['vitorias_o']:4d}  ({estatisticas['porcentagem_o']:6.2f}%)")
-    print(f"  🤝 Empates:            {estatisticas['empates']:4d}  ({estatisticas['porcentagem_empate']:6.2f}%)")
 
-    print(f"\n⏱️  NÚMERO DE JOGADAS:")
-    print(f"  Média geral: {estatisticas['media_jogadas']:.2f}")
-    print(f"  Mínimo: {estatisticas['min_jogadas']} jogadas")
-    print(f"  Máximo: {estatisticas['max_jogadas']} jogadas")
-
-    for resultado, jogadas in estatisticas['jogadas_por_resultado'].items():
-        if jogadas:
-            media = sum(jogadas) / len(jogadas)
-            print(f"  Média em vitórias de {resultado}: {media:.2f} (n={len(jogadas)})")
-
-    print(f"\n🎯 POSIÇÕES FINAIS:")
-    posicoes = estatisticas['posicoes_finais']
-
-    print("\n  Tabuleiro de posições finais (%):")
-    for i in range(0, 9, 3):
-        linha = "    "
-        for j in range(3):
-            pos = i + j
-            porcentagem = (posicoes[pos] / total) * 100
-            linha += f" {pos}:{porcentagem:5.1f}% "
-        print(linha)
-
-    print("\n  Detalhamento por jogador (%):")
-    pos_por_jogador = estatisticas['posicoes_por_jogador']
-
-    print("    X:")
-    for i in range(0, 9, 3):
-        linha = "      "
-        for j in range(3):
-            pos = i + j
-            porcentagem = (pos_por_jogador['X'][pos] / total) * 100
-            linha += f" {pos}:{porcentagem:5.1f}% "
-        print(linha)
-
-    print("    O:")
-    for i in range(0, 9, 3):
-        linha = "      "
-        for j in range(3):
-            pos = i + j
-            porcentagem = (pos_por_jogador['O'][pos] / total) * 100
-            linha += f" {pos}:{porcentagem:5.1f}% "
-        print(linha)
-
-    print(f"\n🏆 TIPO DE VITÓRIA:")
-    total_vitorias = estatisticas['vitorias_x'] + estatisticas['vitorias_o']
-    for tipo, count in estatisticas['vitorias_por_tipo'].items():
-        porcentagem = (count / total_vitorias) * 100 if total_vitorias > 0 else 0
-        print(f"  {tipo.capitalize()}: {count:4d} partidas ({porcentagem:6.2f}%)")
-
-    if estatisticas['sequencias_vitoria']:
-        print(f"\n🎲 SEQUÊNCIAS DE VITÓRIA MAIS COMUNS:")
-        for sequencia, count in estatisticas['sequencias_vitoria'].most_common(5):
-            porcentagem = (count / total_vitorias) * 100 if total_vitorias > 0 else 0
-            print(f"  {sequencia}: {count:4d} vezes ({porcentagem:6.2f}%)")
-
-    print("\n" + "=" * 70)
+def exibir_recortes(recortes: List[Dict], tipo: str):
+    titulo = "ACUMULADO" if tipo == "acumulado" else "JANELAS"
+    print("\n" + "=" * 100)
+    print(f"        📊 RECORTES — {titulo}")
+    print("=" * 100)
+    print(f"{'Recorte':>22} | {'N':>8} | {'VitX%':>7} | {'VitO%':>7} | "
+          f"{'Emp%':>7} | {'NãoDerrX%':>10} | {'NãoDerrO%':>10}")
+    print("-" * 100)
+    for r in recortes:
+        print(f"{r['rotulo']:>22} | {r['n']:>8} | "
+              f"{r['pct_vx']:>7.2f} | {r['pct_vo']:>7.2f} | "
+              f"{r['pct_emp']:>7.2f} | "
+              f"{r['pct_nao_derrota_x']:>10.2f} | "
+              f"{r['pct_nao_derrota_o']:>10.2f}")
+    print("=" * 100)
 
 
 # ================================================================
-# Amostragem adaptativa
+# Função Principal
 # ================================================================
 
 def calcular_passo(total: int) -> int:
-    """
-    Escolhe o passo de amostragem com base no número total de partidas.
-    Regra:
-      <= 1.000         → 1 (todos os pontos)
-      <= 10.000        → 100
-      <= 100.000       → 1.000
-      <= 1.000.000     → 100.000
-      > 1.000.000      → total // 1.000.000 (mínimo 100.000)
-    """
     if total <= 1_000:
         return 1
     if total <= 10_000:
@@ -260,209 +798,81 @@ def calcular_passo(total: int) -> int:
     return max(100_000, total // 1_000_000)
 
 
-# ================================================================
-# Cálculo acumulado (desde a partida 1)
-# ================================================================
-
-def _calcular_acumulados(dados, passo):
-    """
-    Retorna listas paralelas:
-      eixo_x: número da partida (amostrado)
-      acum_j1, acum_j2, acum_emp: contagens ACUMULADAS absolutas
-      pct_j1, pct_j2, pct_emp: taxas ACUMULADAS em %
-    """
-    n = len(dados)
-    eixo_x = []
-    acum_j1, acum_j2, acum_emp = [], [], []
-    pct_j1, pct_j2, pct_emp = [], [], []
-
-    total_j1 = 0
-    total_j2 = 0
-    total_emp = 0
-
-    for i, d in enumerate(dados, start=1):
-        total_j1 += d['vitoria_x']
-        total_j2 += d['vitoria_o']
-        total_emp += d['empate']
-
-        if i % passo == 0 or i == n:
-            eixo_x.append(i)
-            acum_j1.append(total_j1)
-            acum_j2.append(total_j2)
-            acum_emp.append(total_emp)
-            pct_j1.append(total_j1 / i * 100)
-            pct_j2.append(total_j2 / i * 100)
-            pct_emp.append(total_emp / i * 100)
-
-    return eixo_x, acum_j1, acum_j2, acum_emp, pct_j1, pct_j2, pct_emp
-
-
-# ================================================================
-# Gráficos
-# ================================================================
-
-def gerar_grafico_acumulado_absoluto(dados, passo, arquivo_saida):
-    """Acumulado absoluto desde a partida 1 (contagem)."""
-    eixo_x, a1, a2, ae, _, _, _ = _calcular_acumulados(dados, passo)
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(eixo_x, a1, label="Vitórias J1 (X) acumuladas", color="#1f77b4", linewidth=1.8)
-    ax.plot(eixo_x, a2, label="Vitórias J2 (O) acumuladas", color="#d62728", linewidth=1.8)
-    ax.plot(eixo_x, ae, label="Empates acumulados", color="#2ca02c", linewidth=1.8)
-
-    ax.set_xlabel("Número da partida")
-    ax.set_ylabel("Contagem acumulada (absoluta)")
-    ax.set_title("Acumulado absoluto desde o início")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    plt.tight_layout()
-    plt.savefig(arquivo_saida, dpi=120)
-    plt.close(fig)
-    print(f"📊 Gráfico acumulado absoluto salvo em '{arquivo_saida}'")
-
-
-def gerar_grafico_acumulado_percentual(dados, passo, arquivo_saida):
-    """Acumulado percentual desde a partida 1 (taxas)."""
-    eixo_x, _, _, _, p1, p2, pe = _calcular_acumulados(dados, passo)
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(eixo_x, p1, label="Vitórias J1 (X) %", color="#1f77b4", linewidth=1.8)
-    ax.plot(eixo_x, p2, label="Vitórias J2 (O) %", color="#d62728", linewidth=1.8)
-    ax.plot(eixo_x, pe, label="Empates %", color="#2ca02c", linewidth=1.8)
-
-    ax.set_xlabel("Número da partida")
-    ax.set_ylabel("Taxa acumulada (%)")
-    ax.set_title("Taxas acumuladas desde o início")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    ax.set_ylim(-2, 102)
-
-    plt.tight_layout()
-    plt.savefig(arquivo_saida, dpi=120)
-    plt.close(fig)
-    print(f"📊 Gráfico acumulado percentual salvo em '{arquivo_saida}'")
-
-
-def gerar_grafico_inteligente(dados, passo, nome_inteligente, arquivo_saida):
-    """
-    Gráfico do jogador inteligente, assumindo que ele é J2 (O).
-    Plota taxas acumuladas desde o início:
-      - não-derrota (vitória J2 + empate)
-      - vitória J2
-      - empate
-    """
-    eixo_x, _, _, _, _, p2, pe = _calcular_acumulados(dados, passo)
-    nao_derrota = [v + e for v, e in zip(p2, pe)]
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(eixo_x, nao_derrota, label="Não-derrota (vitória J2 + empate)",
-            color="#2ca02c", linewidth=2.0)
-    ax.plot(eixo_x, p2, label="Vitória do inteligente (J2)",
-            color="#1f77b4", linewidth=1.3, linestyle="--")
-    ax.plot(eixo_x, pe, label="Empate",
-            color="#ff7f0e", linewidth=1.3, linestyle=":")
-
-    ax.set_xlabel("Número da partida")
-    ax.set_ylabel("Taxa acumulada (%)")
-    ax.set_title(f"Desempenho do jogador '{nome_inteligente}' — acumulado desde o início")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    ax.set_ylim(-2, 102)
-
-    plt.tight_layout()
-    plt.savefig(arquivo_saida, dpi=120)
-    plt.close(fig)
-    print(f"📊 Gráfico do inteligente salvo em '{arquivo_saida}'")
-
-
-# ================================================================
-# Exportação CSV
-# ================================================================
-
-def exportar_analise_para_csv(estatisticas: Dict, nome_arquivo: str = "analise_detalhada.csv"):
-    if not estatisticas:
-        return
-
-    with open(nome_arquivo, 'w', encoding='utf-8') as f:
-        f.write("Metrica,Valor\n")
-        f.write(f"Total de Partidas,{estatisticas['total']}\n")
-        f.write(f"Vitorias_X,{estatisticas['vitorias_x']}\n")
-        f.write(f"Vitorias_O,{estatisticas['vitorias_o']}\n")
-        f.write(f"Empates,{estatisticas['empates']}\n")
-        f.write(f"Porcentagem_X,{estatisticas['porcentagem_x']:.2f}\n")
-        f.write(f"Porcentagem_O,{estatisticas['porcentagem_o']:.2f}\n")
-        f.write(f"Porcentagem_Empate,{estatisticas['porcentagem_empate']:.2f}\n")
-        f.write(f"Media_Jogadas,{estatisticas['media_jogadas']:.2f}\n")
-        f.write(f"Min_Jogadas,{estatisticas['min_jogadas']}\n")
-        f.write(f"Max_Jogadas,{estatisticas['max_jogadas']}\n")
-
-        for i, count in enumerate(estatisticas['posicoes_finais']):
-            f.write(f"Posicao_{i}_X,{count}\n")
-
-        for jogador in ['X', 'O']:
-            for i, count in enumerate(estatisticas['posicoes_por_jogador'][jogador]):
-                f.write(f"Posicao_{i}_{jogador},{count}\n")
-
-        for tipo, count in estatisticas['vitorias_por_tipo'].items():
-            f.write(f"Vitoria_{tipo},{count}\n")
-
-    print(f"📁 Análise detalhada exportada para '{nome_arquivo}'")
-
-
-# ================================================================
-# Função Principal
-# ================================================================
-
-def main(arquivo_resultado: str = None):
+def main(arquivo_resultado: Optional[str] = None):
     print("\n" + "=" * 70)
     print("                    📊 ANALISADOR DE RESULTADOS")
     print("=" * 70 + "\n")
 
-    if arquivo_resultado:
-        print(f"📖 Lendo arquivo: {arquivo_resultado}")
-        dados = ler_arquivo_resultados(arquivo_resultado)
-    else:
-        print(f"📖 Lendo arquivo: {ARQUIVO_RESULTADOS}")
-        dados = ler_arquivo_resultados(ARQUIVO_RESULTADOS)
-
-    if not dados:
-        print("❌ Não foi possível ler os dados do arquivo.")
-        print("   Verifique se o arquivo existe e está no formato correto.")
+    # 1. Resolve caminho do arquivo
+    caminho = arquivo_resultado if arquivo_resultado else "resultados.txt"
+    if not os.path.exists(caminho):
+        print(f"❌ Arquivo '{caminho}' não encontrado.")
         return
 
-    print(f"✅ {len(dados)} registros carregados com sucesso!")
+    # 2. Extrai nomes dos agentes do nome do arquivo
+    nome_x, nome_o = extrair_agentes_do_nome(caminho)
+    print(f"📖 Arquivo: {caminho}")
+    print(f"👥 Agentes detectados: '{nome_x}' (X) vs '{nome_o}' (O)")
 
+    # 3. Lê os dados
+    dados = ler_arquivo_resultados(caminho)
+    if not dados:
+        print("❌ Sem dados para analisar.")
+        return
+
+    print(f"✅ {len(dados)} partidas carregadas.")
+
+    # 4. Prepara a pasta de saída
+    pasta = preparar_pasta_saida(caminho)
+    print(f"📂 Pasta de saída: {pasta}\n")
+
+    # 5. Análise geral
     estatisticas = analisar_resultados(dados)
-    exibir_analise(estatisticas)
-    
-    if arquivo_resultado:
-        nome_base = os.path.splitext(os.path.basename(arquivo_resultado))[0]
-    
-    if EXPORTAR_CSV:
-        if nome_base:
-            nome_csv = f"{nome_base}.csv"
-        else:
-            nome_csv = NOME_CSV
-        exportar_analise_para_csv(estatisticas, nome_csv)
+    exibir_analise(estatisticas, nome_x, nome_o)
 
-    # Passo de amostragem adaptativo (calculado pelo total)
+    exportar_resumo_txt(estatisticas, nome_x, nome_o,
+                        os.path.join(pasta, "resumo.txt"))
+
+    # 6. Recortes
+    recortes_acumulados, recortes_janelas = _calcular_recortes(dados)
+    exibir_recortes(recortes_acumulados, "acumulado")
+    exibir_recortes(recortes_janelas, "janela")
+
+    if EXPORTAR_CSV:
+        exportar_recortes_csv(recortes_acumulados,
+                              os.path.join(pasta, "recortes_acumulados.csv"),
+                              "acumulado")
+        exportar_recortes_csv(recortes_janelas,
+                              os.path.join(pasta, "recortes_janelas.csv"),
+                              "janela")
+        exportar_recortes_txt(recortes_acumulados, recortes_janelas,
+                        nome_x, nome_o,
+                        os.path.join(pasta, "recortes.txt"))
+
+    # 7. Gráficos gerais (série temporal contínua)
     passo = calcular_passo(len(dados))
     print(f"\n📈 Gerando gráficos (passo de amostragem: {passo})...")
 
-    if nome_base:
-        gerar_grafico_acumulado_absoluto(dados, passo, f"{nome_base}_acumulado_absoluto.png")
-        gerar_grafico_acumulado_percentual(dados, passo, f"{nome_base}_acumulado_percentual.png")
-        if GERAR_GRAFICO_INTELIGENTE:
-            gerar_grafico_inteligente(dados, passo, NOME_INTELIGENTE,f"{nome_base}_inteligente.png")
-    else:
-        gerar_grafico_acumulado_absoluto(dados, passo, ARQUIVO_GRAFICO_ACUMULADO_ABS)
-        gerar_grafico_acumulado_percentual(dados, passo, ARQUIVO_GRAFICO_ACUMULADO_PCT)
-        if GERAR_GRAFICO_INTELIGENTE:
-            gerar_grafico_inteligente(dados, passo, NOME_INTELIGENTE,
-                                    ARQUIVO_GRAFICO_INTELIGENTE)
+    _plot_acumulado_absoluto(dados, passo,
+                             os.path.join(pasta, "grafico_acumulado_absoluto.png"))
+    _plot_taxas_acumuladas(dados, passo,
+                           os.path.join(pasta, "grafico_acumulado_percentual.png"))
 
-    print("\n✅ Análise concluída.")
+    # Gráfico específico do inteligente (se houver)
+    if GERAR_GRAFICO_INTELIGENTE:
+        if "inteligente" in (nome_x, nome_o):
+            eh_segundo = (nome_o == "inteligente")
+            nome_inteligente = "inteligente"
+            _plot_grafico_inteligente(
+                dados, passo, nome_inteligente, eh_segundo,
+                os.path.join(pasta, "grafico_inteligente.png")
+            )
+
+    # 8. Gráficos de recorte (janela e acumulado, separados por categoria)
+    gerar_graficos_recortes(recortes_acumulados, recortes_janelas,
+                            nome_x, nome_o, pasta)
+
+    print("\n✅ Análise concluída.\n")
 
 
 if __name__ == "__main__":

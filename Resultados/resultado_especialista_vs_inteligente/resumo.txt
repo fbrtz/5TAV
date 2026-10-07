@@ -1,0 +1,11 @@
+Resumo: especialista (X) vs inteligente (O)
+==================================================
+
+Total de partidas: 500000
+Vitórias de especialista (X): 11 (0.00%)
+Vitórias de inteligente (O): 0 (0.00%)
+Empates: 499989 (100.00%)
+
+Média de jogadas por partida: 9.00
+Mínimo: 5
+Máximo: 9

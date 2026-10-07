@@ -12,10 +12,10 @@ REMOVER_ARQUIVOS_ANTIGOS = True  # Se True, remove arquivos de resultados e conh
 
 # Escolha os agentes:
 # opções: "especialista", "ingenuo", "inteligente"
-AGENTE_X = "ingenuo"
-AGENTE_O = "ingenuo"
+AGENTE_X = "inteligente"
+AGENTE_O = "inteligente"
 
-NUM_PARTIDAS = 100000
+NUM_PARTIDAS = 500000
 ARQUIVO_RESULTADOS = f"resultado_{AGENTE_X}_vs_{AGENTE_O}.txt"
 MODO_ESCRITA = "sobrescrever"  # opções: "sobrescrever", "anexar"
 
@@ -176,9 +176,9 @@ class JogadorInteligente(Jogador):
     # Parâmetros
     # ------------------------------------------------------------------
     TAXA_APRENDIZADO = 0.3   # quão rápido a pontuação se ajusta
-    RECOMPENSA_VITORIA = 1.0
+    RECOMPENSA_VITORIA = 2.0
     RECOMPENSA_DERROTA = -1.0
-    RECOMPENSA_EMPATE = 0.0
+    RECOMPENSA_EMPATE = 1.0
 
     def __init__(self, nome: str, arquivo_conhecimento: str):
         super().__init__(nome)

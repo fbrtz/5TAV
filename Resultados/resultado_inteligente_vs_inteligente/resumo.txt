@@ -1,0 +1,11 @@
+Resumo: inteligente (X) vs inteligente (O)
+==================================================
+
+Total de partidas: 500000
+Vitórias de inteligente (X): 6 (0.00%)
+Vitórias de inteligente (O): 3 (0.00%)
+Empates: 499991 (100.00%)
+
+Média de jogadas por partida: 9.00
+Mínimo: 6
+Máximo: 9

@@ -1,0 +1,11 @@
+Resumo: ingenuo (X) vs especialista (O)
+==================================================
+
+Total de partidas: 500000
+Vitórias de ingenuo (X): 2093 (0.42%)
+Vitórias de especialista (O): 429709 (85.94%)
+Empates: 68198 (13.64%)
+
+Média de jogadas por partida: 6.63
+Mínimo: 6
+Máximo: 9

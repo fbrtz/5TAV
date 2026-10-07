@@ -1,0 +1,11 @@
+Resumo: ingenuo (X) vs ingenuo (O)
+==================================================
+
+Total de partidas: 500000
+Vitórias de ingenuo (X): 292151 (58.43%)
+Vitórias de ingenuo (O): 144143 (28.83%)
+Empates: 63706 (12.74%)
+
+Média de jogadas por partida: 7.63
+Mínimo: 5
+Máximo: 9
